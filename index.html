@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多卡片分页懒加载（最终修复版）</title>
+
+    <link rel="stylesheet" href="./style.css">
+    <!-- 引入图标库 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- 顶部公告板 -->
+    <div class="announcement-bar">
+        <div class="announcement-info">
+            <i class="fas fa-user announcement-icon"></i>
+            <span>负责人：张三</span>
+        </div>
+        <div class="announcement-info">
+            <i class="fas fa-envelope announcement-icon"></i>
+            <span>联系邮箱：zhangsan@example.com</span>
+        </div>
+    </div>
+
+    <!-- 卡片容器 -->
+    <div id="card-container"></div>
+    
+    <!-- 加载提示 -->
+    <div id="loading" class="loading">
+        <i class="fas fa-spinner fa-spin mr-2"></i> 正在加载...
+    </div>
+    
+    <!-- 懒加载哨兵（触发分页的关键） -->
+    <div id="sentinel" style="height: 1px; margin-top: 20px;"></div>
+
+    <script>
+        // 配置项（根据你的实际情况修改）
+        const CONFIG = {
+            FALLBACK_IMG: "https://via.placeholder.com/400x320?text=图片加载失败" // 图片加载失败备用图
+        };
+
+        // 全局状态
+        let currentPage = 1;
+        const container = document.getElementById("card-container");
+        const loadingIndicator = document.getElementById("loading");
+        const sentinel = document.getElementById("sentinel");
+        let isLoading = false;    // 防止重复加载的锁
+        let hasMoreData = true;   // 是否还有更多数据
+
+        // 初始化：加载第一页 + 自动填充首屏
+        init();
+
+        // 初始化函数
+        async function init() {
+            await loadPage(currentPage);
+            checkAndFillFirstScreen();
+            initSentinelObserver();  // 初始化哨兵监听
+            initScrollListener();    // 初始化滚动监听
+        }
+
+        // 1. 初始化哨兵监听（IntersectionObserver，性能优先）
+        function initSentinelObserver() {
+            const observer = new IntersectionObserver((entries) => {
+                const entry = entries[0];
+                // 当哨兵进入视口（提前200px）且没有在加载、还有数据时，加载下一页
+                if (entry.isIntersecting && !isLoading && hasMoreData) {
+                    currentPage++;
+                    loadPage(currentPage);
+                }
+            }, {
+                rootMargin: '200px 0px',  // 提前200px触发加载，提升体验
+                threshold: 0.1
+            });
+            observer.observe(sentinel);
+        }
+
+        // 2. 初始化滚动监听（兜底方案，兼容特殊场景）
+        function initScrollListener() {
+            window.addEventListener("scroll", () => {
+                if (isLoading || !hasMoreData) return;
+                
+                // 当滚动到距离底部200px时，加载下一页
+                const scrollBottom = window.innerHeight + window.scrollY;
+                const pageBottom = document.body.offsetHeight - 200;
+                if (scrollBottom >= pageBottom) {
+                    currentPage++;
+                    loadPage(currentPage);
+                }
+            });
+        }
+
+        // 3. 自动填充首屏（如果第一页不够一屏，自动加载下一页）
+        function checkAndFillFirstScreen() {
+            if (isLoading || !hasMoreData) return;
+            
+            // 页面内容高度 < 视口高度 → 需要继续加载
+            const contentHeight = document.body.offsetHeight;
+            const viewportHeight = window.innerHeight;
+            if (contentHeight < viewportHeight) {
+                currentPage++;
+                loadPage(currentPage).then(checkAndFillFirstScreen);  // 递归检查
+            }
+        }
+
+        // 4. 核心：加载指定页数据
+        async function loadPage(pageNum) {
+            // 前置校验：超过总页数 → 停止加载
+            // if (pageNum > CONFIG.TOTAL_PAGES) {
+            //     hasMoreData = false;
+            //     updateLoadingText("已经到底啦~");
+            //     return false;
+            // }
+
+            // 加锁：防止重复请求
+            isLoading = true;
+            updateLoadingText(`<i class="fas fa-spinner fa-spin mr-2"></i> 正在加载第${pageNum}页...`);
+
+            try {
+                // 1. 请求JSON数据
+                const response = await fetch(`data/page${pageNum}.json`);
+                // 请求失败（如404）→ 停止加载
+                if (!response.ok) throw new Error(`请求第${pageNum}页失败`);
+
+                // 2. 解析数据
+                const data = await response.json();
+                if (!data || data.length === 0) throw new Error(`第${pageNum}页数据为空`);
+
+                // 3. 渲染卡片
+                renderCards(data);
+
+                // 4. 初始化当前页的图片懒加载（关键修复：每次加载新数据都要调用）
+                initImageLazyLoad();
+
+                // 5. 加载成功 → 返回true
+                return true;
+
+            } catch (error) {
+                // 异常处理：打印错误 + 停止加载
+                console.error("加载数据出错:", error);
+                hasMoreData = false;
+                updateLoadingText("已经到底啦~");
+                return false;
+
+            } finally {
+                // 解锁：无论成功失败，都释放加载锁
+                isLoading = false;
+            }
+        }
+
+        // 5. 渲染卡片到页面
+        function renderCards(data) {
+            data.forEach(item => {
+                const card = document.createElement("div");
+                card.className = "card";
+                
+                // 卡片HTML结构（注意：图片用data-src存储，避免提前加载）
+                card.innerHTML = `
+                    <img 
+                        data-src="${item.img || CONFIG.FALLBACK_IMG}"  // 优先用数据中的图片，没有则用备用图
+                        alt="${item.title || '卡片图片'}" 
+                        class="card-image"
+                        data-fallback="${CONFIG.FALLBACK_IMG}"  // 加载失败时的备用图
+                    >
+                    <div class="card-content">
+                        <div class="card-title">${item.title || '未命名卡片'}</div>
+                        <div class="card-row card-row-2">
+                            <div>${item.tag1 || '-'}</div>
+                            <div>${item.tag2 || '-'}</div>
+                            <div>${item.tag3 || '-'}</div>
+                        </div>
+                        <div class="card-row card-row-3">
+                            <div>${item.date || '未知时间'}</div>
+                            <div>${item.author || '未知作者'}</div>
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(card);
+            });
+        }
+
+        // 6. 关键修复：图片懒加载（每次加载新卡片后都要调用）
+        function initImageLazyLoad() {
+            // 只选择「未加载」的图片（避免重复处理）
+            const lazyImages = document.querySelectorAll('.card-image:not(.loaded)');
+            if (lazyImages.length === 0) return;
+
+            // 现代浏览器：用IntersectionObserver实现懒加载
+            if ('IntersectionObserver' in window) {
+                const imageObserver = new IntersectionObserver((entries, observer) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            const img = entry.target;
+                            loadImageWithFallback(img);  // 加载图片（带失败兜底）
+                            observer.unobserve(img);     // 加载完成后取消监听
+                        }
+                    });
+                }, {
+                    rootMargin: '100px 0px',  // 提前100px加载图片
+                    threshold: 0.1
+                });
+
+                // 给所有未加载的图片添加监听
+                lazyImages.forEach(img => imageObserver.observe(img));
+            } 
+            // 旧浏览器降级：直接加载所有图片
+            else {
+                lazyImages.forEach(img => loadImageWithFallback(img));
+            }
+        }
+
+        // 7. 图片加载工具（带失败兜底）
+        function loadImageWithFallback(img) {
+            const targetSrc = img.dataset.src;
+            const fallbackSrc = img.dataset.fallback;
+
+            // 用临时Image对象预加载，判断图片是否有效
+            const tempImg = new Image();
+            
+            // 图片加载成功
+            tempImg.onload = () => {
+                img.src = targetSrc;
+                img.classList.add('loaded');  // 添加loaded类，显示图片
+            };
+            
+            // 图片加载失败（用备用图）
+            tempImg.onerror = () => {
+                img.src = fallbackSrc;
+                img.classList.add('loaded');
+            };
+            
+            // 触发预加载
+            tempImg.src = targetSrc;
+        }
+
+        // 8. 更新加载提示文本
+        function updateLoadingText(text) {
+            loadingIndicator.innerHTML = text;
+        }
+    </script>
+</body>
+</html>
