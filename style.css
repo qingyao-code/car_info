@@ -121,6 +121,12 @@ body {
     color: #FF7F00; /* 橙色 */
 }
 
+.card-row-4 {
+    justify-content: space-between;
+    color: #888;
+    font-size: 12px;
+}
+
 /* 加载提示 */
 .loading {
     text-align: center;
