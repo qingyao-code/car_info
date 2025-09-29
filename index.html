@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>多卡片分页懒加载（最终修复版）</title>
+    <title>汽车交易信息</title>
 
     <link rel="stylesheet" href="./style.css">
     <!-- 引入图标库 -->
@@ -14,11 +14,11 @@
     <div class="announcement-bar">
         <div class="announcement-info">
             <i class="fas fa-user announcement-icon"></i>
-            <span>负责人：张三</span>
+            <span>ZhuName: Michael Zhu</span>
         </div>
         <div class="announcement-info">
             <i class="fas fa-envelope announcement-icon"></i>
-            <span>联系邮箱：zhangsan@example.com</span>
+            <span>Email: mz_abiron@icloud.com</span>
         </div>
     </div>
 
@@ -104,12 +104,6 @@
 
         // 4. 核心：加载指定页数据
         async function loadPage(pageNum) {
-            // 前置校验：超过总页数 → 停止加载
-            // if (pageNum > CONFIG.TOTAL_PAGES) {
-            //     hasMoreData = false;
-            //     updateLoadingText("已经到底啦~");
-            //     return false;
-            // }
 
             // 加锁：防止重复请求
             isLoading = true;
@@ -117,7 +111,7 @@
 
             try {
                 // 1. 请求JSON数据
-                const response = await fetch(`data/page${pageNum}.json`);
+                const response = await fetch(`data/page${pageNum}.json?_t=${Date.now()}`);
                 // 请求失败（如404）→ 停止加载
                 if (!response.ok) throw new Error(`请求第${pageNum}页失败`);
 
@@ -154,23 +148,48 @@
                 card.className = "card";
                 
                 // 卡片HTML结构（注意：图片用data-src存储，避免提前加载）
+                let title = item.seriesName + item.modelName;
+
+                // 处理售价文本
+                let salePriceText;
+                const validSalePriceNum = Number(item.salePrice);
+                if (!isNaN(validSalePriceNum) && validSalePriceNum > 0) {
+                    // 除以1万并保留2位小数，拼接“万”字（如需求需要）
+                    salePriceText = `${(validSalePriceNum / 10000).toFixed(2)}万`;
+                } else {
+                    salePriceText = '未知';
+                }
+
+                // 处理指导价
+                let guidePriceText;
+                const validNum = Number(item.guidePrice);
+                if (!isNaN(validNum) && validNum > 0) {
+                    // 除以1万并保留2位小数，拼接“万”字（如需求需要）
+                    guidePriceText = `${(validNum / 10000).toFixed(2)}万`;
+                } else {
+                    guidePriceText = '未知';
+                }
+
                 card.innerHTML = `
                     <img 
-                        data-src="${item.img || CONFIG.FALLBACK_IMG}"  // 优先用数据中的图片，没有则用备用图
-                        alt="${item.title || '卡片图片'}" 
+                        data-src="${item.seriesImg || CONFIG.FALLBACK_IMG}"  // 优先用数据中的图片，没有则用备用图
+                        alt="${title || '图片'}" 
                         class="card-image"
                         data-fallback="${CONFIG.FALLBACK_IMG}"  // 加载失败时的备用图
                     >
                     <div class="card-content">
-                        <div class="card-title">${item.title || '未命名卡片'}</div>
+                        <div class="card-title">${title || '未命名'}</div>
                         <div class="card-row card-row-2">
-                            <div>${item.tag1 || '-'}</div>
-                            <div>${item.tag2 || '-'}</div>
-                            <div>${item.tag3 || '-'}</div>
+                            <div>首次上牌|${item.firstLicensePlateDateStr || '-'}</div>
+                            <div>表显里程|${item.mileageStr || '-'}</div>
+                            <div>排放标准|${item.emissionStandard || '-'}</div>
                         </div>
                         <div class="card-row card-row-3">
-                            <div>${item.date || '未知时间'}</div>
-                            <div>${item.author || '未知作者'}</div>
+                            <div>售价|${salePriceText}</div>
+                            <div>指导价|${guidePriceText}</div>
+                        </div>
+                        <div class="card-row card-row-4">
+                            <div>车辆ID|${item.carId}</div>
                         </div>
                     </div>
                 `;
